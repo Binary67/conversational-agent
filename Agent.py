@@ -29,6 +29,10 @@ class AgentCoordinator:
             api_version=os.environ["AZURE_OPENAI_API_VERSION"],
         )
         self.provider = OpenAIProvider(openai_client=client)
+        self.OutputFile = "Logs/agents_output.txt"
+        os.makedirs("Logs", exist_ok=True)
+        if not os.path.exists(self.OutputFile):
+            open(self.OutputFile, "a", encoding="utf-8").close()
         self.outline_agent = Agent(
             name="Outline Writer",
             instructions=(
@@ -50,6 +54,10 @@ class AgentCoordinator:
             ),
         )
 
+    def SaveOutput(self, agent_name: str, content: str) -> None:
+        with open(self.OutputFile, "a", encoding="utf-8") as file:
+            file.write(f"### Output from {agent_name}\n{content}\n\n")
+
     async def generate_blog(self, title: str) -> str:
         context = BlogContext(title=title)
         run_config = RunConfig(model_provider=self.provider)
@@ -57,15 +65,18 @@ class AgentCoordinator:
         logger.info("Running Outline Writer")
         outline_result = await Runner.run(self.outline_agent, title, run_config=run_config)
         context.outline = outline_result.final_output
+        self.SaveOutput("Outline Writer", context.outline)
 
         logger.info("Running Content Writer for first draft")
         draft_input = f"Title: {title}\nOutline:\n{context.outline}"
         draft_result = await Runner.run(self.content_agent, draft_input, run_config=run_config)
         context.draft = draft_result.final_output
+        self.SaveOutput("Content Writer Draft", context.draft)
 
         logger.info("Running Proofread Writer")
         proofread_result = await Runner.run(self.proofread_agent, context.draft, run_config=run_config)
         context.proofread_notes = proofread_result.final_output
+        self.SaveOutput("Proofread Writer", context.proofread_notes)
 
         logger.info("Applying proofreading corrections")
         correction_input = (
@@ -73,6 +84,7 @@ class AgentCoordinator:
             "Return the corrected blog post in markdown."
         )
         final_result = await Runner.run(self.content_agent, correction_input, run_config=run_config)
+        self.SaveOutput("Content Writer Final", final_result.final_output)
         return final_result.final_output
 
 
